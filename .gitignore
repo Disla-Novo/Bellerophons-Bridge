@@ -1,0 +1,42 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+[Aa]rtifacts/
+
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+.vscode/
+
+# Build and package artifacts
+*.gha
+*.dll
+*.exe
+*.pdb
+*.nupkg
+*.snupkg
+*.cache
+
+# Test and diagnostic output
+[Tt]est[Rr]esult*/
+*.trx
+*.log
+
+# NuGet generated files
+*.nuget.g.props
+*.nuget.g.targets
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local environment files; 
+.env
+.env.*
+!.env.example
+
