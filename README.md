@@ -19,7 +19,7 @@ The project references Grasshopper 8. Check the release notes for the Rhino/Gras
 
 ## Download and install
 
-Download the `.gha` file for your Rhino/Grasshopper version from the project's [Releases](https://github.com/Disla-Novo/Bellerophons-Bridge/releases) page. You do not need to build the plugin from source to use a release.
+Download the `.gha` file for your Rhino/Grasshopper version from the project's [Releases](https://github.com/Disla-Novo/Bellerophons-Bridge/releases) page. Releases include builds targeting `net48`, `net7.0`, and `net7.0-windows`; check the release notes and your Rhino version to choose the compatible file. You do not need to build the plugin from source to use a release.
 
 To install it, copy the downloaded `.gha` file into Grasshopper's Libraries folder (commonly `%AppData%\Grasshopper\Libraries`) or click and drag the `.gha` onto the Grasshopper UI and restart Rhino. If Rhino or Grasshopper reports that the plugin could not be loaded, check the release notes and Rhino's plugin/security prompts for any additional steps for your platform.
 

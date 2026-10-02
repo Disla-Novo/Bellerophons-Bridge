@@ -1,0 +1,70 @@
+name: Build and draft release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 7.0.x
+
+      - name: Verify tag matches project version
+        shell: pwsh
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          [xml]$project = Get-Content "BellerophonExport/BellerophonExport.csproj"
+          $projectVersion = $project.Project.PropertyGroup |
+            Where-Object { $_.Version } |
+            Select-Object -First 1 -ExpandProperty Version
+          $tagVersion = $env:TAG_NAME -replace '^v', ''
+
+          if ($tagVersion -ne $projectVersion) {
+            throw "Tag version '$tagVersion' does not match project version '$projectVersion'. Update the project version or push a matching v-prefixed tag."
+          }
+
+      - name: Build and collect Grasshopper plugins
+        shell: pwsh
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          $project = "BellerophonExport/BellerophonExport.csproj"
+          $version = $env:TAG_NAME -replace '^v', ''
+          $frameworks = @("net48", "net7.0", "net7.0-windows")
+          New-Item -ItemType Directory -Force "release-assets" | Out-Null
+
+          foreach ($framework in $frameworks) {
+            dotnet build $project --configuration Release --framework $framework
+            if ($LASTEXITCODE -ne 0) {
+              throw "Build failed for $framework."
+            }
+
+            $builtPlugin = "BellerophonExport/bin/Release/$framework/BellerophonsBridge.gha"
+            if (-not (Test-Path $builtPlugin)) {
+              throw "Expected build output was not found: $builtPlugin"
+            }
+
+            Copy-Item $builtPlugin "release-assets/BellerophonsBridge-$version-$framework.gha"
+          }
+
+      - name: Create draft GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Bellerophon's Bridge ${{ github.ref_name }}"
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          generate_release_notes: true
+          files: release-assets/*.gha
