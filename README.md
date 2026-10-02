@@ -1,5 +1,9 @@
 # Bellerophon's Bridge
 
+
+<img width="298" height="158" alt="bph_plugin" src="https://github.com/user-attachments/assets/8f386045-aac3-489e-b622-c253800cd22f" />
+
+
 Bellerophon's Bridge is an alpha Grasshopper plugin for exporting ordered 3D-printing toolpath points to the Bellerophon language. The Dimidium Ecosystem's Bellerophon compiler converts the exported input into printer-specific G-code using its compiler and printer-profile settings.
 
 This plugin is an exporter, not a slicer: it does not turn a solid into perimeters or infill. Create the toolpaths in Grasshopper (or another tool) and provide their ordered points to the component.
@@ -9,7 +13,7 @@ This plugin is an exporter, not a slicer: it does not turn a solid into perimete
 ## Requirements
 
 - Rhino with Grasshopper
-- The Dimidium Ecosystem: [Get the latest release](https://github.com/Disla-Novo/Dimidium_Bellerophon)
+- The Dimidium Ecosystem: [Get the latest release](https://github.com/Disla-Novo/Dimidium_Bellerophon). This will not work on versions prior to v1.2.0-alpha.13.
 
 The project references Grasshopper 8. Check the release notes for the Rhino/Grasshopper versions supported by each downloadable plugin build.
 
