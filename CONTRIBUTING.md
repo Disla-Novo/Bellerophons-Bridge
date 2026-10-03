@@ -13,7 +13,7 @@ Thanks for considering helping with Bellerophon's Bridge. The plugin is in alpha
 **Is it a compiler issue?** 
 Please open an issue at the [Dimidium Ecosystem](https://github.com/Disla-Novo/Dimidium_Bellerophon). Be sure to read the [Dimidium Ecosystem CONTRIBUTING.md](https://github.com/Disla-Novo/Dimidium_Bellerophon/blob/main/CONTRIBUTING.md) before posting so you know exactly what compiler-specific details to include and what the requirements are. Thank you!
 
-Please keep the plugin's scope in mind: Bellerophon's Bridge exports points from paths created in Grasshopper. The Bellerophon compiler handles conversion to printer-specific G-code; the plugin is not intended to replace a slicer or handle heavy computation. 
+Please keep the plugin's scope in mind: Bellerophon's Bridge exports points from paths created in Grasshopper and can convert slicer movement commands into Bellerophon source. The Bellerophon compiler handles conversion to printer-specific G-code; the plugin is not intended to replace a slicer or handle heavy computation.
 
 ## Bug reports and workflow suggestions
 
@@ -21,7 +21,7 @@ When reporting an issue, include as many of these details as you can:
 
 - Rhino and Grasshopper versions, operating system, and plugin version or commit
 - What geometry and Grasshopper components you used
-- How the point data is organized (for example, one branch per continuous toolpath)
+- Which exporter was used and, for point input, how the point data is organized (for example, one branch per continuous toolpath)
 - What you expected and what happened
 - A small `.gh` example and the relevant exported Bellerophon text, if you can share them
 - Whether the result was checked in the Dimidium Ecosystem's Bellerophon compiler
