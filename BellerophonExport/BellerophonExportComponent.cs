@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.IO; // Required for saving files directly
+using System.IO;
+using System.Globalization;
 
 using Grasshopper;
 using Grasshopper.Kernel;
@@ -10,58 +11,64 @@ using Rhino.Geometry;
 
 namespace BellerophonExport
 {
-  public class BellerophonExportComponent : GH_Component
+  public class BellerophonGCodeComponent : GH_Component
   {
     private bool _saveWasRequested;
 
-    public BellerophonExportComponent()
-      : base("Bellerophon Export", "BPH",
-          "Compiles geometry into Bellerophon syntax and exports safely to disk.",
+    public BellerophonGCodeComponent()
+      : base("Bellerophon G-code Export", "BPH-G",
+          "Converts slicer G-code into Bellerophon .bph source and exports it to disk.",
           "Dimidium", "Export")
     {
     }
 
     protected override void RegisterInputParams(GH_Component.GH_InputParamManager pManager)
-    {   
-        // Auto-flattening added here to prevent data tree freezes
-        pManager.AddPointParameter("Toolpath points", "P", "Ordered points from sliced toolpath curves. Keep each path in its own branch.", GH_ParamAccess.tree);
-        
-        pManager.AddTextParameter("Title", "T", "Custom title (Defaults to Rhino file name)", GH_ParamAccess.item);
-        pManager[1].Optional = true; 
+    {
+        pManager.AddTextParameter("G-code", "G",
+            "Slicer G-code as a list of lines (or one big string with newlines). Comments and non-move commands are skipped.",
+            GH_ParamAccess.list);
 
-        // Saving is triggered once when this input changes from false to true.
-        pManager.AddBooleanParameter("Save", "S", "Set to True to confirm and write the file. Set back to False before saving again.", GH_ParamAccess.item, false);
+        pManager.AddTextParameter("Title", "T",
+            "Custom title. Defaults to the Rhino file name, then to 'Bellerophon_Export'.",
+            GH_ParamAccess.item);
+        pManager[1].Optional = true;
 
-        //  New Flip toggle
-        pManager.AddBooleanParameter("Flip Z", "F", "True = Top-to-Bottom, False = Bottom-to-Top", GH_ParamAccess.item, false);
+        pManager.AddBooleanParameter("Save", "S",
+            "Set to True to confirm and write the .bph file. Set back to False before saving again.",
+            GH_ParamAccess.item, false);
+
+        pManager.AddBooleanParameter("Flip Z", "F",
+            "True = reverse the move order (top-to-bottom view). False = keep slicer order.",
+            GH_ParamAccess.item, false);
+
+        pManager.AddBooleanParameter("Absolute mode", "A",
+            "Emit 'Absolute' at the top of the .bph.",
+            GH_ParamAccess.item, true);
+
+        pManager.AddNumberParameter("Default speed", "V",
+            "Feedrate emitted as 'SetSpeed = N' at the top of the .bph. Set to 0 to skip.",
+            GH_ParamAccess.item, 2000.0);
+
+        pManager.AddBooleanParameter("Auto extrude", "AE",
+            "True = strip E values from every move and emit EnableAutoExtrude = 1. False = keep the E values from the source G-code.",
+            GH_ParamAccess.item, false);
+
+        pManager.AddBooleanParameter("Auto retract", "AR",
+            "True = emit EnableAutoRetract = 1. Requires RelativeExtrusion, which the plugin emits automatically when either AE or AR is on.",
+            GH_ParamAccess.item, false);
     }
 
     protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
     {
-        pManager.AddTextParameter("Bellerophon", "B", "Compiled .bph syntax", GH_ParamAccess.item);
+        pManager.AddTextParameter("Bellerophon", "B",
+            "Compiled .bph source.",
+            GH_ParamAccess.item);
     }
 
-  protected override void SolveInstance(IGH_DataAccess DA)
+    protected override void SolveInstance(IGH_DataAccess DA)
     {
-        GH_Structure<GH_Point> pointTree;
-        if (!DA.GetDataTree(0, out pointTree)) return;
-
-        List<List<Point3d>> paths = new List<List<Point3d>>();
-        List<Point3d> points = new List<Point3d>();
-        foreach (IList<GH_Point> branch in pointTree.Branches)
-        {
-            List<Point3d> path = new List<Point3d>();
-            foreach (GH_Point point in branch)
-            {
-                path.Add(point.Value);
-                points.Add(point.Value);
-            }
-
-            if (path.Count > 0)
-                paths.Add(path);
-        }
-
-        if (points.Count == 0) return;
+        List<string> gcodeLines = new List<string>();
+        if (!DA.GetDataList(0, gcodeLines) || gcodeLines.Count == 0) return;
 
         string exportTitle = "";
         DA.GetData(1, ref exportTitle);
@@ -72,66 +79,218 @@ namespace BellerophonExport
         _saveWasRequested = saveFile;
 
         bool flipZ = false;
-        DA.GetData(3, ref flipZ); // Retrieve the Flip Z toggle
+        DA.GetData(3, ref flipZ);
 
-        // Determine where to save the file (defaults to Desktop)
+        bool absoluteMode = true;
+        DA.GetData(4, ref absoluteMode);
+
+        double defaultSpeed = 2000.0;
+        DA.GetData(5, ref defaultSpeed);
+
+        bool autoExtrude = false;
+        DA.GetData(6, ref autoExtrude);
+
+        bool autoRetract = false;
+        DA.GetData(7, ref autoRetract);
+
+      
+
+        List<string> lines = new List<string>();
+        foreach (string raw in gcodeLines)
+        {
+            if (raw == null) continue;
+            if (raw.IndexOf('\n') >= 0)
+            {
+                foreach (string sub in raw.Split('\n'))
+                    lines.Add(sub);
+            }
+            else
+            {
+                lines.Add(raw);
+            }
+        }
+
+      
+
+        // The parser flattens relative moves into absolute coordinates so the
+        // emitted .bph is always absolute, independent of whatever mode the
+        // source slicer was using.
+        bool sourceAbsolutePos = true;
+        bool sourceAbsoluteE = true;
+
+        double currentX = 0, currentY = 0, currentZ = 0, currentE = 0;
+
+        List<MoveRecord> moves = new List<MoveRecord>();
+
+        foreach (string rawLine in lines)
+        {
+            if (rawLine == null) continue;
+            string line = rawLine.Trim();
+            if (line.Length == 0) continue;
+
+            int commentIdx = line.IndexOf(';');
+            if (commentIdx >= 0) line = line.Substring(0, commentIdx).Trim();
+            if (line.Length == 0) continue;
+
+            if (line.Equals("G90", StringComparison.OrdinalIgnoreCase)) { sourceAbsolutePos = true; continue; }
+            if (line.Equals("G91", StringComparison.OrdinalIgnoreCase)) { sourceAbsolutePos = false; continue; }
+            if (line.Equals("M82", StringComparison.OrdinalIgnoreCase)) { sourceAbsoluteE = true; continue; }
+            if (line.Equals("M83", StringComparison.OrdinalIgnoreCase)) { sourceAbsoluteE = false; continue; }
+
+            string upper = line.ToUpperInvariant();
+            bool isMove = upper.StartsWith("G0 ") || upper.StartsWith("G1 ")
+                       || upper.Equals("G0") || upper.Equals("G1");
+            if (!isMove) continue;
+
+            double? px = ExtractParam(line, 'X');
+            double? py = ExtractParam(line, 'Y');
+            double? pz = ExtractParam(line, 'Z');
+            double? pe = ExtractParam(line, 'E');
+
+            if (!px.HasValue && !py.HasValue && !pz.HasValue && !pe.HasValue) continue;
+
+            double newX, newY, newZ, newE;
+            if (sourceAbsolutePos)
+            {
+                newX = px.HasValue ? px.Value : currentX;
+                newY = py.HasValue ? py.Value : currentY;
+                newZ = pz.HasValue ? pz.Value : currentZ;
+            }
+            else
+            {
+                newX = px.HasValue ? currentX + px.Value : currentX;
+                newY = py.HasValue ? currentY + py.Value : currentY;
+                newZ = pz.HasValue ? currentZ + pz.Value : currentZ;
+            }
+
+            if (sourceAbsoluteE)
+            {
+                newE = pe.HasValue ? pe.Value : currentE;
+            }
+            else
+            {
+                newE = pe.HasValue ? currentE + pe.Value : currentE;
+            }
+
+            // A move that only sets E (no X/Y/Z) is a retract or prime. Keep
+            // it as an E-only move record so the compiler emits a standalone
+            // extrusion command.
+            bool hasExplicitE = pe.HasValue;
+            bool hasPosition = px.HasValue || py.HasValue || pz.HasValue;
+
+            if (!hasPosition && !hasExplicitE) continue;
+
+            currentX = newX;
+            currentY = newY;
+            currentZ = newZ;
+            currentE = newE;
+
+            moves.Add(new MoveRecord
+            {
+                X = hasPosition ? newX : (double?)null,
+                Y = hasPosition ? newY : (double?)null,
+                Z = hasPosition ? newZ : (double?)null,
+                E = hasExplicitE ? newE : (double?)null
+            });
+        }
+
+        if (moves.Count == 0) return;
+
+        if (flipZ)
+        {
+            moves.Reverse();
+        }
+
+       
+        // Toolpath min X/Y are shifted to sit 10mm in from the printer origin,
+        // and min Z to 0. Adjust these constants if your printer homes elsewhere.
+        double minX = double.MaxValue, minY = double.MaxValue, minZ = double.MaxValue;
+        foreach (var m in moves)
+        {
+            if (m.X.HasValue && m.X.Value < minX) minX = m.X.Value;
+            if (m.Y.HasValue && m.Y.Value < minY) minY = m.Y.Value;
+            if (m.Z.HasValue && m.Z.Value < minZ) minZ = m.Z.Value;
+        }
+        if (minX == double.MaxValue) minX = 0;
+        if (minY == double.MaxValue) minY = 0;
+        if (minZ == double.MaxValue) minZ = 0;
+
+        double shiftX = 10.0 - minX;
+        double shiftY = 10.0 - minY;
+        double shiftZ = 0.0 - minZ;
+
+        //  Determine title + save folder 
         string folderPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
         var doc = Rhino.RhinoDoc.ActiveDoc;
 
         if (doc != null && !string.IsNullOrEmpty(doc.Name))
         {
             if (string.IsNullOrWhiteSpace(exportTitle))
-            {
-                exportTitle = Path.GetFileNameWithoutExtension(doc.Name); 
-            }
+                exportTitle = Path.GetFileNameWithoutExtension(doc.Name);
             if (!string.IsNullOrEmpty(doc.Path))
-            {
                 folderPath = Path.GetDirectoryName(doc.Path);
-            }
         }
         else if (string.IsNullOrWhiteSpace(exportTitle))
         {
-            exportTitle = "Bellerophon_Export"; 
+            exportTitle = "Bellerophon_Export";
         }
 
-        double minX = double.MaxValue;
-        double minY = double.MaxValue;
-        double minZ = double.MaxValue;
-
-        foreach (Point3d pt in points)
-        {
-            if (pt.X < minX) minX = pt.X;
-            if (pt.Y < minY) minY = pt.Y;
-            if (pt.Z < minZ) minZ = pt.Z;
-        }
-
-        double shiftX = 10.0 - minX;
-        double shiftY = 10.0 - minY;
-        double shiftZ = 0.0 - minZ;
-
+        // Emit .bph source 
         System.Text.StringBuilder bph = new System.Text.StringBuilder();
-        bph.AppendLine($"M.title \"{exportTitle}\"");
-        bph.AppendLine("Absolute");
-        bph.AppendLine("SetSpeed = 2000");
-        bph.AppendLine("RelativeExtrusion");
-        bph.AppendLine("EnableAutoExtrude = 1");
-        bph.AppendLine("EnableAutoRetract = 1"); // Added for the compiler-side retraction logic
+        bph.AppendLine(string.Format(CultureInfo.InvariantCulture,
+            "M.title \"{0}\"", exportTitle));
+
+        if (absoluteMode)
+            bph.AppendLine("Absolute");
+
+        if (defaultSpeed > 0)
+            bph.AppendLine(string.Format(CultureInfo.InvariantCulture,
+                "SetSpeed = {0}", defaultSpeed));
+
+        // Both auto features rely on relative extrusion. Emit the mode switch
+        // once if either is enabled.
+        if (autoExtrude || autoRetract)
+            bph.AppendLine("RelativeExtrusion");
+
+        if (autoExtrude)
+            bph.AppendLine("EnableAutoExtrude = 1");
+
+        if (autoRetract)
+            bph.AppendLine("EnableAutoRetract = 1");
+
         bph.AppendLine("");
 
-        // Sort paths by their average Z while keeping each path's point order intact.
-        var orderedPaths = flipZ
-            ? System.Linq.Enumerable.OrderByDescending(paths, path => System.Linq.Enumerable.Average(path, pt => pt.Z))
-            : System.Linq.Enumerable.OrderBy(paths, path => System.Linq.Enumerable.Average(path, pt => pt.Z));
-
-        foreach (List<Point3d> path in orderedPaths)
+        foreach (var m in moves)
         {
-            foreach (Point3d pt in path)
+            bool hasPos = m.X.HasValue || m.Y.HasValue || m.Z.HasValue;
+
+            if (!hasPos && m.E.HasValue)
             {
-                double safeX = pt.X + shiftX;
-                double safeY = pt.Y + shiftY;
-                double safeZ = pt.Z + shiftZ;
-                
-                bph.AppendLine($"MoveTo x={safeX:F3} y={safeY:F3} z={safeZ:F3}");
+                // E-only move: retract, unretract, or standalone prime.
+                bph.AppendLine(string.Format(CultureInfo.InvariantCulture,
+                    "MoveTo e={0:F4}", m.E.Value));
+                continue;
+            }
+
+            double safeX = (m.X ?? 0) + shiftX;
+            double safeY = (m.Y ?? 0) + shiftY;
+            double safeZ = (m.Z ?? 0) + shiftZ;
+
+            // Auto-extrude computes E from the printer profile, so any E in
+            // the source is dropped.
+            bool emitE = !autoExtrude && m.E.HasValue;
+
+            if (emitE)
+            {
+                bph.AppendLine(string.Format(CultureInfo.InvariantCulture,
+                    "MoveTo x={0:F3} y={1:F3} z={2:F3} e={3:F4}",
+                    safeX, safeY, safeZ, m.E.Value));
+            }
+            else
+            {
+                bph.AppendLine(string.Format(CultureInfo.InvariantCulture,
+                    "MoveTo x={0:F3} y={1:F3} z={2:F3}",
+                    safeX, safeY, safeZ));
             }
         }
 
@@ -145,7 +304,7 @@ namespace BellerophonExport
         {
             string filePath = Path.Combine(folderPath, exportTitle + ".bph");
             Eto.Forms.DialogResult result = Eto.Forms.MessageBox.Show(
-                $"Save the Bellerophon file to:\n{filePath}",
+                string.Format("Save the Bellerophon file to:\n{0}", filePath),
                 "Confirm Bellerophon export",
                 Eto.Forms.MessageBoxButtons.YesNo,
                 Eto.Forms.MessageBoxType.Warning);
@@ -163,8 +322,46 @@ namespace BellerophonExport
             }
         }
     }
+
+    private struct MoveRecord
+    {
+        public double? X;
+        public double? Y;
+        public double? Z;
+        public double? E;
+    }
+
+    // Parses a G-code parameter like 'X' out of a line. Returns null if the
+    // parameter isn't present or can't be parsed.
+    private static double? ExtractParam(string line, char letter)
+    {
+        for (int i = 0; i < line.Length; i++)
+        {
+            if (char.ToUpperInvariant(line[i]) != letter) continue;
+            int start = i + 1;
+            if (start >= line.Length) return null;
+
+            int end = start;
+            while (end < line.Length)
+            {
+                char c = line[end];
+                if (char.IsDigit(c) || c == '.' || c == '-' || c == '+') end++;
+                else break;
+            }
+            if (end == start) return null;
+
+            double value;
+            if (double.TryParse(line.Substring(start, end - start),
+                    NumberStyles.Float, CultureInfo.InvariantCulture, out value))
+                return value;
+
+            return null;
+        }
+        return null;
+    }
+
     protected override System.Drawing.Bitmap Icon => null;
 
-    public override Guid ComponentGuid => new Guid("f7bbfb54-da7b-4d32-9afd-3fffef2184de");
+    public override Guid ComponentGuid => new Guid("a4875090-b21e-4f21-8f7d-b7bd16310d42");
   }
 }
