@@ -32,9 +32,17 @@ To build from source, run `dotnet build BellerophonExport\BellerophonExport.cspr
 
 The point component keeps its original Grasshopper identity, so existing definitions that used it remain linked. The G-code importer is a separate component with its own inputs and settings.
 
+> [!IMPORTANT]
+> **You can use the Droid plugin to generate your toolpaths.** Integrating [Droid](https://github.com/steox/droid/tree/master) makes it much easier to visually customize your slicing parameters and physical movements before compiling them into Bellerophon `.bph` files.
+
+<img width="937" height="453" alt="testings" src="https://github.com/user-attachments/assets/30e3b7b2-3e5c-4e3d-9b47-6ee994700ef0" />
+
+> [!TIP]
+> Please note that this is a basic example of utilizing Droid. If you build a cleaner Grasshopper workflow, feel free to submit a pull request with a better screenshot!
+
 ### Prepare point-based toolpaths
 
-1. **Draw your lines:** Start by turning your 3D shape into 2D printable lines (using tools like **Contour**). Remember, this just creates the outer shell—you have to design your own infill lines if you want them!
+1. **Draw your lines:** Start by turning your 3D shape into 2D printable lines (using tools like **Contour**). Remember, this just creates the outer shell
 2. **Turn lines into dots:** 3D printers read points, not curves. Use **Divide Curve** to break your lines down into a series of points. 
 3. **Keep them organized:** Plug your points into the **Toolpath points (P)** input in the order you want them to print. 
 4. **Close your loops:** If you are printing a closed shape like a cylinder, make sure the last point connects back to the first point so you don't get a gap in the wall. 
