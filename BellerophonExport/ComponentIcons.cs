@@ -16,7 +16,7 @@ namespace BellerophonExport
     {
 #if NET7_0_OR_GREATER
       if (!OperatingSystem.IsWindows())
-        throw new PlatformNotSupportedException("Component icons are supported only on Windows.");
+        return null;
 #endif
 
       string fullResourceName = "BellerophonExport.Properties." + resourceName;
