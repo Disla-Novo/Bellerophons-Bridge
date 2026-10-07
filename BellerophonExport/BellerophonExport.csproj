@@ -26,6 +26,11 @@
   <ItemGroup>
     <PackageReference Include="Grasshopper" Version="8.0.23304.9001" ExcludeAssets="runtime" />
   </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Properties\BP.png" LogicalName="BellerophonExport.Properties.BP.png" />
+    <EmbeddedResource Include="Properties\GC.png" LogicalName="BellerophonExport.Properties.GC.png" />
+  </ItemGroup>
   
   <!-- For Windows only builds -->
   <PropertyGroup Condition="$(TargetFramework.Contains('-windows')) or $(TargetFramework.StartsWith('net4'))">

@@ -167,7 +167,7 @@ namespace BellerophonExport
         }
     }
 
-    protected override System.Drawing.Bitmap Icon => null;
+    protected override System.Drawing.Bitmap Icon => ComponentIcons.PointExport;
 
     public override Guid ComponentGuid => new Guid("f7bbfb54-da7b-4d32-9afd-3fffef2184de");
   }

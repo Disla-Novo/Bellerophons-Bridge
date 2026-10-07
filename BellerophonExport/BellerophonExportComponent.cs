@@ -360,7 +360,7 @@ namespace BellerophonExport
         return null;
     }
 
-    protected override System.Drawing.Bitmap Icon => null;
+    protected override System.Drawing.Bitmap Icon => ComponentIcons.GCodeExport;
 
     public override Guid ComponentGuid => new Guid("a4875090-b21e-4f21-8f7d-b7bd16310d42");
   }
