@@ -20,11 +20,16 @@
     <Version>0.1.0-alpha.1</Version>
     <Title>Bellerophon's Bridge</Title>
     <Company>Disla-Novo</Company>
-    <Description>Exports 3D-printing toolpaths from Grasshopper for conversion to G-code with the Bellerophon compiler.</Description>
+    <Description>Exports Grasshopper point toolpaths and converts slicer G-code into Bellerophon source.</Description>
   </PropertyGroup>
   
   <ItemGroup>
     <PackageReference Include="Grasshopper" Version="8.0.23304.9001" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Properties\BP.png" LogicalName="BellerophonExport.Properties.BP.png" />
+    <EmbeddedResource Include="Properties\GC.png" LogicalName="BellerophonExport.Properties.GC.png" />
   </ItemGroup>
   
   <!-- For Windows only builds -->
