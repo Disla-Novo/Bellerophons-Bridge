@@ -11,7 +11,7 @@ This plugin is an exporter, not a slicer: the point component does not turn a so
 ## Requirements
 
 - Rhino 8 with Grasshopper
-- The Dimidium Ecosystem: [Get the latest release](https://github.com/Disla-Novo/Dimidium_Bellerophon). This will not work on versions prior to v1.2.0-alpha.13.
+- `The Dimidium Ecosystem:` [Get the latest release](https://github.com/Disla-Novo/Dimidium_Bellerophon). This will not work on versions prior to v1.2.0-alpha.13.
 
 ## Download and install
 
