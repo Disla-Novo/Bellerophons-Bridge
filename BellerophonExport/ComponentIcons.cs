@@ -23,7 +23,7 @@ namespace BellerophonExport
       using (Stream stream = typeof(ComponentIcons).Assembly.GetManifestResourceStream(fullResourceName))
       {
         if (stream == null)
-          throw new InvalidOperationException("Embedded component icon not found: " + fullResourceName);
+          return null;
 
         using (Bitmap source = new Bitmap(stream))
           return new Bitmap(source, 24, 24);

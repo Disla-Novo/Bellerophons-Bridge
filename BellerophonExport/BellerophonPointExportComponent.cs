@@ -38,6 +38,10 @@ namespace BellerophonExport
         pManager.AddBooleanParameter("Flip Z", "F",
             "True = sort paths from top-to-bottom. False = sort paths from bottom-to-top.",
             GH_ParamAccess.item, false);
+
+        pManager.AddNumberParameter("First layer Z", "Z1",
+            "Minimum exported Z height in the Rhino document's units.",
+            GH_ParamAccess.item, 0.2);
     }
 
     protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
@@ -80,6 +84,15 @@ namespace BellerophonExport
         bool flipZ = false;
         DA.GetData(3, ref flipZ);
 
+        double firstLayerZ = 0.2;
+        DA.GetData(4, ref firstLayerZ);
+        if (double.IsNaN(firstLayerZ) || double.IsInfinity(firstLayerZ) || firstLayerZ < 0)
+        {
+            AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                "First layer Z must be a finite, non-negative number.");
+            return;
+        }
+
         string folderPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
         var doc = Rhino.RhinoDoc.ActiveDoc;
 
@@ -108,10 +121,10 @@ namespace BellerophonExport
 
         double shiftX = 10.0 - minX;
         double shiftY = 10.0 - minY;
-        double shiftZ = -minZ;
+        double shiftZ = firstLayerZ - minZ;
 
         System.Text.StringBuilder bph = new System.Text.StringBuilder();
-        bph.AppendLine(string.Format("M.title \"{0}\"", exportTitle));
+        bph.AppendLine(string.Format("M.title \"{0}\"", FormatTitle(exportTitle)));
         bph.AppendLine("Absolute");
         bph.AppendLine("SetSpeed = 2000");
         bph.AppendLine("RelativeExtrusion");
@@ -165,6 +178,14 @@ namespace BellerophonExport
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Failed to save: " + ex.Message);
             }
         }
+    }
+
+    private static string FormatTitle(string title)
+    {
+        if (title == null)
+            return "";
+
+        return title.Replace("\"", "'").Replace('\r', ' ').Replace('\n', ' ');
     }
 
     protected override System.Drawing.Bitmap Icon => ComponentIcons.PointExport;
