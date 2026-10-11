@@ -17,7 +17,7 @@
   <PropertyGroup>
     <!-- Specifies information for Assembly and Yak -->
     <AssemblyName>BellerophonsBridge</AssemblyName>
-    <Version>0.1.0-alpha.2</Version>
+    <Version>0.1.0-alpha.3</Version>
     <Title>Bellerophon's Bridge</Title>
     <Company>Disla-Novo</Company>
     <Description>Exports Grasshopper point toolpaths and converts slicer G-code into Bellerophon source.</Description>
