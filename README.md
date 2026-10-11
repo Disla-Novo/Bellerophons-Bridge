@@ -28,13 +28,21 @@ To build from source, run `dotnet build BellerophonExport\BellerophonExport.cspr
 ### Choose an input workflow
 
 - **Grasshopper geometry:** Use **Bellerophon Export (BPH)** with ordered XYZ points in a data tree. Each branch is treated as a path.
-- **Slicer output:** Use **Bellerophon G-code Export (BPH-G)** with slicer G-code supplied as text lines or as one multi-line string. It reads ordered `G0`/`G1` moves, follows `G90`/`G91` and `M82`/`M83`, applies `G92` coordinate/extruder resets, converts `G20` inch coordinates to millimeters, maps `F` feed rates to `SetSpeed`, and maps common nozzle/bed heater commands.
+- **Slicer output:** Use **Bellerophon G-code Export (BPH-G)** with slicer G-code supplied as text lines or as one multi-line string. The component reads ordered `G0`/`G1` moves, follows `G90`/`G91` and `M82`/`M83` coordinate/extrusion modes, and skips comments and other commands.
 
 The point component keeps its original Grasshopper identity, so existing definitions that used it remain linked. The G-code importer is a separate component with its own inputs and settings.
 
+> [!IMPORTANT]
+> **You can use the Droid plugin to generate your toolpaths.** Integrating [Droid](https://github.com/steox/droid/tree/master) makes it much easier to visually customize your slicing parameters and physical movements before compiling them into Bellerophon `.bph` files.
+
+<img width="937" height="453" alt="testings" src="https://github.com/user-attachments/assets/30e3b7b2-3e5c-4e3d-9b47-6ee994700ef0" />
+
+> [!TIP]
+> Please note that this is a basic example of utilizing Droid. If you build a cleaner Grasshopper workflow, feel free to submit a pull request with a better screenshot!
+
 ### Prepare point-based toolpaths
 
-1. **Draw your lines:** Start by turning your 3D shape into 2D printable lines (using tools like **Contour**). Remember, this just creates the outer shell—you have to design your own infill lines if you want them!
+1. **Draw your lines:** Start by turning your 3D shape into 2D printable lines (using tools like **Contour**). Remember, this just creates the outer shell
 2. **Turn lines into dots:** 3D printers read points, not curves. Use **Divide Curve** to break your lines down into a series of points. 
 3. **Keep them organized:** Plug your points into the **Toolpath points (P)** input in the order you want them to print. 
 4. **Close your loops:** If you are printing a closed shape like a cylinder, make sure the last point connects back to the first point so you don't get a gap in the wall. 
@@ -57,23 +65,22 @@ The point component keeps its original Grasshopper identity, so existing definit
 
 | Input | Type | Behavior |
 |---|---|---|
-| **G-code (G)** | Text list | G-code lines, or a single text item containing multiple lines. Converts `G0`/`G1` moves and their `F` feed rates, including standalone `G1 F...` speed changes; handles `G90`/`G91`, `M82`/`M83`, `G92`, `G20`/`G21`, `M104`/`M109`, and `M140`/`M190`. Comments and unsupported commands are ignored. |
+| **G-code (G)** | Text list | G-code lines, or a single text item containing multiple lines. Only `G0`/`G1` movement commands are converted; comments and non-move commands are ignored. |
 | **Title (T)** | Optional text | Used in `M.title` and as the saved filename. Defaults to the active Rhino document's name or `Bellerophon_Export`. |
 | **Save (S)** | Boolean, default `False` | On a false-to-true change, asks for confirmation before saving a `.bph` file. Set it back to `False` before requesting another save. |
 | **Flip Z (F)** | Boolean, default `False` | Reverses the parsed move order when true; otherwise preserves slicer order. |
-| **Absolute mode (A)** | Boolean, default `True` | Emits `Absolute` or `Relative` in the generated Bellerophon source and formats the converted XYZ moves to match. |
-| **Default speed (V)** | Number, default `2000` | Emits the initial `SetSpeed = N` fallback. Any `F` feed rates in the source update speed at their corresponding moves. Set to `0` to omit the initial fallback. |
-| **Auto extrude (AE)** | Boolean, default `False` | Omits source E values on positional moves and emits `EnableAutoExtrude = 1` when enabled. E-only retract/prime moves are retained. |
+| **Absolute mode (A)** | Boolean, default `True` | Emits `Absolute` in the generated Bellerophon header. |
+| **Default speed (V)** | Number, default `2000` | Emits `SetSpeed = N` in the header. Set to `0` to omit it. |
+| **Auto extrude (AE)** | Boolean, default `False` | Omits source E values and emits `EnableAutoExtrude = 1` when enabled. |
 | **Auto retract (AR)** | Boolean, default `False` | Emits `EnableAutoRetract = 1` when enabled. Either auto option also enables `RelativeExtrusion`. |
-| **Offset to origin (O)** | Boolean, default `False` | Preserves the slicer's coordinates by default. When enabled, translates the path so its minimum X/Y is 10 mm and minimum Z is 0. |
 
 ### Output
 
 **Bellerophon (B)** provides generated Bellerophon source as text. The point exporter writes its standard title, coordinate/extrusion settings and a `MoveTo` line for each point; the G-code exporter emits moves parsed from the slicer's G-code and supports the additional header options above. Both finish with `M.end`.
 
-The point exporter writes `SetSpeed = 2000`, `RelativeExtrusion`, `EnableAutoExtrude = 1`, and `EnableAutoRetract = 1`. The G-code exporter converts source extrusion to relative E increments, maps `G92 E...` to Bellerophon's `ResetExtruder`, maps `F` values to `SetSpeed`, and translates `M104`/`M109` nozzle and `M140`/`M190` bed temperature commands to `Set_Heater_Temperature` and (for wait commands) `WaitForTemp`. It can optionally use the compiler's auto-extrusion and auto-retraction settings. The Bellerophon compiler applies extrusion and retraction according to its behavior and printer profile.
+The point exporter writes `SetSpeed = 2000`, `RelativeExtrusion`, `EnableAutoExtrude = 1`, and `EnableAutoRetract = 1`. The G-code exporter instead preserves source E values by default and can optionally use the compiler's auto-extrusion and auto-retraction settings. The Bellerophon compiler applies extrusion and retraction according to its behavior and printer profile.
 
-The point exporter translates its toolpath so the minimum X and Y coordinates become `10` and the minimum Z becomes `0`. The G-code exporter preserves the slicer's coordinates by default; its **Offset to origin (O)** input optionally applies that same translation. G-code `G20` coordinates are converted from inches to millimeters and `G21` coordinates are treated as millimeters. The Bellerophon compiler and printer profile expect millimeters, so verify the units used by the source file. If enabling the optional offset, note that this changes the slicer's planned bed placement and does not guarantee the full toolpath fits within the printer's bed.
+Before output, each component translates the toolpath so the minimum X and Y coordinates become `10` and the minimum Z becomes `0`. These coordinates are written as-is in Rhino document units; the exporter does not convert units. The Bellerophon compiler and printer profile expect millimeters, so set the Rhino document units to millimeters before creating/exporting toolpaths. With millimeter units, the offset places the lowest X and Y at `10 mm` and the lowest Z at `0 mm`. This is only an origin offset: the exporter does not check that the full toolpath fits within the printer's bed dimensions, so verify the resulting bounds.
 
 When saving, a saved Rhino document's folder is used; otherwise, the Desktop is used. The confirmation dialog displays the destination path.
 
@@ -97,10 +104,10 @@ M.end
 
 - This plugin is intended for the Dimidium Ecosystem's Bellerophon compiler; the emitted text is not standard G-code.
 - The point component exports paths supplied by the Grasshopper definition; it does not generate infill, calculate wall thickness, or optimize travel paths.
-- The G-code component does not convert arcs (`G2`/`G3`), tool changes, fan commands, or other unsupported slicer commands and metadata. Heater mappings cover common `S` targets; `M109 R` is also accepted as a wait target. Printer start/end sequences and firmware-specific commands are not preserved.
+- The G-code component only converts `G0`/`G1` movement commands and does not convert every slicer command or metadata field.
 - It does not currently emit explicit path/travel markers between branches.
 - The point exporter uses fixed speed and auto-extrusion/retraction settings. The G-code exporter exposes speed and auto-extrusion/retraction options as inputs.
-- G-code coordinates and feed rates are assumed to be millimeters unless `G20` selects inches; `G20` values are converted to millimeters.
+- Units are not converted.
 
 Grasshopper workflows and usability suggestions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to share ideas, examples, and bug reports.
 
