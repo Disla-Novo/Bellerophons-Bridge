@@ -38,7 +38,7 @@ namespace BellerophonExport
             GH_ParamAccess.item, false);
 
         pManager.AddBooleanParameter("Flip Z", "F",
-            "True = reverse the move order (top-to-bottom view). False = keep slicer order.",
+            "Deprecated and ignored. Reversing G-code move order can corrupt the toolpath.",
             GH_ParamAccess.item, false);
 
         pManager.AddBooleanParameter("Absolute mode", "A",
@@ -50,7 +50,7 @@ namespace BellerophonExport
             GH_ParamAccess.item, 2000.0);
 
         pManager.AddBooleanParameter("Auto extrude", "AE",
-            "True = strip E values from every move and emit EnableAutoExtrude = 1. False = keep the E values from the source G-code.",
+            "True = replace positive E values with profile-driven extrusion, preserve retracts, and mark moves without E as e=0.",
             GH_ParamAccess.item, false);
 
         pManager.AddBooleanParameter("Auto retract", "AR",
@@ -58,8 +58,12 @@ namespace BellerophonExport
             GH_ParamAccess.item, false);
 
         pManager.AddBooleanParameter("Offset to origin", "O",
-            "True = shift the imported toolpath so its minimum X/Y is 10 mm and minimum Z is 0. False = preserve slicer coordinates.",
+            "True = shift the imported toolpath so its minimum X/Y is 10 mm and minimum Z is the first-layer Z. False = preserve slicer coordinates.",
             GH_ParamAccess.item, false);
+
+        pManager.AddNumberParameter("First layer Z", "Z1",
+            "Minimum Z height in millimeters when Offset to origin is enabled.",
+            GH_ParamAccess.item, 0.2);
     }
 
     protected override void RegisterOutputParams(GH_Component.GH_OutputParamManager pManager)
@@ -100,6 +104,14 @@ namespace BellerophonExport
         bool offsetToOrigin = false;
         DA.GetData(8, ref offsetToOrigin);
 
+        double firstLayerZ = 0.2;
+        DA.GetData(9, ref firstLayerZ);
+        if (double.IsNaN(firstLayerZ) || double.IsInfinity(firstLayerZ) || firstLayerZ < 0)
+        {
+            AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                "First layer Z must be a finite, non-negative number.");
+            return;
+        }
 
         List<string> lines = new List<string>();
         foreach (string raw in gcodeLines)
@@ -139,14 +151,14 @@ namespace BellerophonExport
             if (commentIdx >= 0) line = line.Substring(0, commentIdx).Trim();
             if (line.Length == 0) continue;
 
-            if (line.Equals("G90", StringComparison.OrdinalIgnoreCase)) { sourceAbsolutePos = true; continue; }
-            if (line.Equals("G91", StringComparison.OrdinalIgnoreCase)) { sourceAbsolutePos = false; continue; }
-            if (line.Equals("M82", StringComparison.OrdinalIgnoreCase)) { sourceAbsoluteE = true; continue; }
-            if (line.Equals("M83", StringComparison.OrdinalIgnoreCase)) { sourceAbsoluteE = false; continue; }
-            if (line.Equals("G20", StringComparison.OrdinalIgnoreCase)) { unitScale = 25.4; continue; }
-            if (line.Equals("G21", StringComparison.OrdinalIgnoreCase)) { unitScale = 1.0; continue; }
-
             string upper = line.ToUpperInvariant();
+            if (IsCommand(upper, "G90")) { sourceAbsolutePos = true; continue; }
+            if (IsCommand(upper, "G91")) { sourceAbsolutePos = false; continue; }
+            if (IsCommand(upper, "M82")) { sourceAbsoluteE = true; continue; }
+            if (IsCommand(upper, "M83")) { sourceAbsoluteE = false; continue; }
+            if (IsCommand(upper, "G20")) { unitScale = 25.4; continue; }
+            if (IsCommand(upper, "G21")) { unitScale = 1.0; continue; }
+
             if (IsCommand(upper, "M104") || IsCommand(upper, "M109")
                 || IsCommand(upper, "M140") || IsCommand(upper, "M190"))
             {
@@ -172,7 +184,7 @@ namespace BellerophonExport
                 continue;
             }
 
-            if (upper.Equals("G92") || upper.StartsWith("G92 "))
+            if (IsCommand(upper, "G92"))
             {
                 double? resetX = ExtractParam(line, 'X');
                 double? resetY = ExtractParam(line, 'Y');
@@ -273,9 +285,8 @@ namespace BellerophonExport
         if (moves.Count == 0) return;
 
         if (flipZ)
-        {
-            moves.Reverse();
-        }
+            AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                "Flip Z is deprecated and ignored. G-code command order is preserved.");
 
        
         // Optional translation for workflows that need the point-export origin convention.
@@ -292,7 +303,7 @@ namespace BellerophonExport
 
         double shiftX = offsetToOrigin ? 10.0 - minX : 0.0;
         double shiftY = offsetToOrigin ? 10.0 - minY : 0.0;
-        double shiftZ = offsetToOrigin ? 0.0 - minZ : 0.0;
+        double shiftZ = offsetToOrigin ? firstLayerZ - minZ : 0.0;
 
         //  Determine title + save folder 
         string folderPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
@@ -313,7 +324,7 @@ namespace BellerophonExport
         // Emit .bph source 
         System.Text.StringBuilder bph = new System.Text.StringBuilder();
         bph.AppendLine(string.Format(CultureInfo.InvariantCulture,
-            "M.title \"{0}\"", exportTitle));
+            "M.title \"{0}\"", FormatTitle(exportTitle)));
 
         if (absoluteMode)
             bph.AppendLine("Absolute");
@@ -388,9 +399,11 @@ namespace BellerophonExport
             double safeY = (m.Y ?? 0) + shiftY;
             double safeZ = (m.Z ?? 0) + shiftZ;
 
-            // Auto-extrude computes E from the printer profile, so any E in
-            // the source is dropped.
-            bool emitE = !autoExtrude && m.E.HasValue;
+            // Positive source extrusion is replaced by profile-driven auto-extrusion.
+            // Preserve retracts and explicitly mark travels so they do not extrude.
+            bool stripE = autoExtrude && m.E.HasValue && m.E.Value > 0;
+            bool emitE = m.E.HasValue && !stripE;
+            bool markTravel = autoExtrude && !m.E.HasValue;
 
             System.Text.StringBuilder moveLine = new System.Text.StringBuilder("MoveTo");
             if (m.X.HasValue)
@@ -404,6 +417,8 @@ namespace BellerophonExport
                     absoluteMode ? safeZ : safeZ - previousZ);
             if (emitE)
                 moveLine.AppendFormat(CultureInfo.InvariantCulture, " e={0:F4}", m.E.Value);
+            else if (markTravel)
+                moveLine.Append(" e=0");
             bph.AppendLine(moveLine.ToString());
 
             if (m.X.HasValue) previousX = m.X.Value + shiftX;
@@ -453,10 +468,38 @@ namespace BellerophonExport
 
     private static bool IsCommand(string line, string command)
     {
-        return line.Equals(command, StringComparison.OrdinalIgnoreCase)
-            || (line.StartsWith(command, StringComparison.OrdinalIgnoreCase)
-                && line.Length > command.Length
-                && char.IsWhiteSpace(line[command.Length]));
+        if (line.Length == 0 || command.Length < 2
+            || char.ToUpperInvariant(line[0]) != char.ToUpperInvariant(command[0]))
+            return false;
+
+        int sourceEnd = 1;
+        while (sourceEnd < line.Length && char.IsDigit(line[sourceEnd]))
+            sourceEnd++;
+
+        int commandEnd = 1;
+        while (commandEnd < command.Length && char.IsDigit(command[commandEnd]))
+            commandEnd++;
+
+        int sourceCode, expectedCode;
+        if (sourceEnd == 1 || commandEnd == 1
+            || !int.TryParse(line.Substring(1, sourceEnd - 1), NumberStyles.None,
+                CultureInfo.InvariantCulture, out sourceCode)
+            || !int.TryParse(command.Substring(1, commandEnd - 1), NumberStyles.None,
+                CultureInfo.InvariantCulture, out expectedCode)
+            || sourceCode != expectedCode)
+            return false;
+
+        return sourceEnd == line.Length
+            || char.IsWhiteSpace(line[sourceEnd])
+            || char.IsLetter(line[sourceEnd]);
+    }
+
+    private static string FormatTitle(string title)
+    {
+        if (title == null)
+            return "";
+
+        return title.Replace("\"", "'").Replace('\r', ' ').Replace('\n', ' ');
     }
 
     // Parses a G-code parameter like 'X' out of a line. Returns null if the
